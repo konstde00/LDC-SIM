@@ -17,6 +17,8 @@ public:
     bool enable_cba;
     bool enable_de_duplication;
     bool is_access_rate_fixed;
+    bool process_writes;
+    float tiny_queue_fraction;
     uint64_t update_interval;
     uint64_t fixed_access_rate;
     int latency_local;

@@ -31,6 +31,10 @@ void ConfigManager::loadConfig(const std::string &config_file)
     enable_de_duplication = config["enable_de_duplication"];
     is_access_rate_fixed = config["is_access_rate_fixed"];
     fixed_access_rate = config["fixed_access_rate_value"];
+    // Optional: apply the "set" records of the trace as writes instead of treating every record as a get
+    process_writes = config.value("process_writes", false);
+    // Optional: size of Ldc's per-replica tiny write queue as a fraction of the cache (paper: 0.01%)
+    tiny_queue_fraction = config.value("tiny_queue_fraction", 0.0001);
     update_interval = config.value("cba_update_interval", 10);
     latency_local = config["latency_local"];
     latency_rdma = config["latency_rdma"];
@@ -53,6 +57,8 @@ void ConfigManager::printConfig()
               << "  CBA enabled: " << (enable_cba ? "true" : "false") << "\n"
               << "  De-duplication enabled: " << (enable_de_duplication ? "true" : "false") << "\n"
               << "  Fixed access rate: " << (is_access_rate_fixed ? std::to_string(fixed_access_rate) : "false") << "\n"
+              << "  Process writes: " << (process_writes ? "true" : "false") << "\n"
+              << "  Tiny queue fraction: " << tiny_queue_fraction << "\n"
               << "  CBA update interval: " << update_interval << " seconds\n"
               << "  Local latency: " << latency_local << " us\n"
               << "  RDMA latency: " << latency_rdma << " us\n"

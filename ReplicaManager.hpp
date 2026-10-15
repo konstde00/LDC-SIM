@@ -38,6 +38,8 @@ private:
     bool enable_cba = false;
     bool enable_de_duplication = false;
     bool is_access_rate_fixed = false;
+    bool process_writes = false;
+    uint64_t total_writes = 0;
     uint64_t R_opt = 0;
     std::unique_ptr<CostBenefitAnalyzer> cba;
     std::vector<int> replica_misses;
@@ -56,11 +58,12 @@ private:
     std::string cache_type;
 
     void runCBAUpdater();
+    void applyWrite(int key);
 
 public:
     ReplicaManager(ConfigManager &config);
     ~ReplicaManager();
-    int handleRequest(int key, int replica_id = -1);
+    int handleRequest(int key, int replica_id = -1, bool is_write = false);
     void computeAndWriteMetrics(const std::string &filename, float cache_pct, int total_dataset_size);
     void print_optimal_redundanc_to_file(std::string filename);
     int hashFunction(int key);

@@ -19,12 +19,14 @@ private:
     float overlap_pct;
     float avg_latency;
     int total_keys_admitted;
+    uint64_t total_writes;
     std::vector<float> replica_miss_ratios;
 
 public:
     Metrics(const std::vector<std::set<int>> &key_sets, float cache_pct, int num_keys_seen,
             float overall_miss_ratio, float remote_miss_ratio, float local_miss_ratio,
-            const std::vector<float> &replica_miss_ratios, int total_keys_admitted, float avg_latency);
+            const std::vector<float> &replica_miss_ratios, int total_keys_admitted, float avg_latency,
+            uint64_t total_writes = 0);
 
     void writeToFile(const std::string &filename) const;
 };

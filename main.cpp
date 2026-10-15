@@ -32,6 +32,7 @@ int main()
     std::string is_cba = config.enable_cba ? "cba" : "no_cba";
     std::string is_dedup = config.enable_de_duplication ? "dedup" : "no_dedup";
     std::string is_fixed_access_rate = config.is_access_rate_fixed ? "fixed" : "variable";
+    std::string is_writes = config.process_writes ? "_writes" : "";
 
     // Extract workload and workload number from folder path
     size_t last_slash = folder_path.find_last_of("/");
@@ -47,7 +48,7 @@ int main()
     // Construct filename
     std::string filename = output_folder + "/workload_" + workload + "_" + workload_number + "_cache_" + cache_policy + "_" +
                            std::to_string(cache_percent) + "_" + is_rdma + "_" + is_cba + "_access_rate" +
-                           is_fixed_access_rate + "_" + is_dedup + ".txt";
+                           is_fixed_access_rate + "_" + is_dedup + is_writes + ".txt";
     manager.computeAndWriteMetrics(filename, config.cache_percentage, config.total_dataset_size);
 
     std::cout << "Simulation complete. Stats written to " << filename << "\n";

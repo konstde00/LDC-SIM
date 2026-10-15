@@ -10,9 +10,17 @@ ReplicaManager::ReplicaManager(ConfigManager &config)
 {
     workload_folder = config.workload_folder;
     cache_type = config.cache_type;
+    process_writes = config.process_writes;
+    // Ldc admits a written object that is not in a replica's main cache into that replica's tiny queue
+    // (selective and quick write demotion); OrigCache has no queue
+    size_t write_queue_size = 0;
+    if (process_writes && rdma_enabled && config.tiny_queue_fraction > 0)
+    {
+        write_queue_size = std::max<size_t>(1, static_cast<size_t>(config.tiny_queue_fraction * config.cache_size));
+    }
     for (int i = 0; i < config.num_replicas; ++i)
     {
-        replicas.emplace_back(std::make_unique<Replica>(i, config.cache_size, cache_type));
+        replicas.emplace_back(std::make_unique<Replica>(i, config.cache_size, cache_type, write_queue_size));
     }
     if (is_access_rate_fixed)
     {
@@ -36,9 +44,14 @@ ReplicaManager::~ReplicaManager()
     }
 }
 
-int ReplicaManager::handleRequest(int key, int replica_id)
+int ReplicaManager::handleRequest(int key, int replica_id, bool is_write)
 {
     std::lock_guard<std::mutex> lock(manager_mutex);
+    if (is_write && process_writes)
+    {
+        applyWrite(key);
+        return key;
+    }
     total_requests++;
     if (total_requests % update_interval == 0 && enable_cba)
     {
@@ -69,6 +82,28 @@ int ReplicaManager::handleRequest(int key, int replica_id)
     if (result != -1)
     {
         return result;
+    }
+
+    // A key in the primary's tiny queue is also a local hit. It moves to the main cache only if
+    // no other replica caches it there, so the read does not add redundancy
+    auto &write_queue = replicas[primary_replica_id]->write_queue;
+    if (write_queue && write_queue->contains(key))
+    {
+        bool cached_elsewhere = false;
+        for (int i = 0; i < replicas.size(); ++i)
+        {
+            if (i != primary_replica_id && replicas[i]->hasKey(key))
+            {
+                cached_elsewhere = true;
+                break;
+            }
+        }
+        if (!cached_elsewhere)
+        {
+            write_queue->remove(key);
+            replicas[primary_replica_id]->cache->put(key, key);
+        }
+        return key;
     }
 
     if (rdma_enabled)
@@ -117,6 +152,27 @@ int ReplicaManager::handleRequest(int key, int replica_id)
     return -1;
 }
 
+// A write is applied at every replica. OrigCache brings the object into every cache, which is the
+// write-induced redundancy. Ldc updates the object in place where the main cache already holds it and
+// otherwise admits it into the replica's tiny queue. Writes are not counted in the read metrics
+void ReplicaManager::applyWrite(int key)
+{
+    total_writes++;
+    // Writes count towards the access frequencies used by the CBA, as in the artifact's put handler
+    access_frequencies[key]++;
+    for (auto &replica : replicas)
+    {
+        if (replica->write_queue && !replica->hasKey(key))
+        {
+            replica->write_queue->put(key, key);
+        }
+        else
+        {
+            replica->cache->put(key, key);
+        }
+    }
+}
+
 void ReplicaManager::computeAndWriteMetrics(const std::string &filename, float cache_pct, int total_dataset_size)
 {
     std::vector<float> miss_ratios;
@@ -142,7 +198,7 @@ void ReplicaManager::computeAndWriteMetrics(const std::string &filename, float c
         cache_contents[i] = replicas[i]->cache->getKeys();
     }
 
-    Metrics metrics(cache_contents, cache_pct, total_dataset_size, overall_miss_ratio, remote_miss_ratio, local_miss_ratio, miss_ratios, total_keys_admitted, avg_latency);
+    Metrics metrics(cache_contents, cache_pct, total_dataset_size, overall_miss_ratio, remote_miss_ratio, local_miss_ratio, miss_ratios, total_keys_admitted, avg_latency, total_writes);
     metrics.writeToFile(filename);
     std::string modified_filename = "optimal_redundancy_" + filename;
     print_optimal_redundanc_to_file(modified_filename);

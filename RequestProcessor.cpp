@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <regex>
 #include <charconv>
+#include <cstring>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -53,9 +54,9 @@ bool RequestProcessor::isValidFileFormat(const std::string &filename)
 RequestProcessor::RequestProcessor(const std::string &folder) : folder_path(folder) {}
 
 // Load requests from a file into a vector
-std::vector<std::pair<int, int>> RequestProcessor::loadRequestsFromFile(const std::string &file_path)
+std::vector<Request> RequestProcessor::loadRequestsFromFile(const std::string &file_path)
 {
-    std::vector<std::pair<int, int>> requests;
+    std::vector<Request> requests;
     std::ifstream file(file_path);
     int total_requests = 0;
     if (!file)
@@ -69,7 +70,7 @@ std::vector<std::pair<int, int>> RequestProcessor::loadRequestsFromFile(const st
     {
         std::istringstream iss(line);
         int key, replica;
-        std::string operation; // Ignore this column
+        std::string operation;
 
         if (!(iss >> key >> replica >> operation))
         {
@@ -77,7 +78,7 @@ std::vector<std::pair<int, int>> RequestProcessor::loadRequestsFromFile(const st
             continue;
         }
 
-        requests.emplace_back(key, replica);
+        requests.push_back({key, static_cast<uint16_t>(replica), operation == "set"});
         // if (requests.size() >= 100000)
         //     break;
     }
@@ -86,9 +87,10 @@ std::vector<std::pair<int, int>> RequestProcessor::loadRequestsFromFile(const st
     return requests;
 }
 
-std::vector<std::pair<int, int>> RequestProcessor::loadRequestsFromTracesFile(const std::string &file_path)
+// Each line is "<key>" or "<key> <operation>"; a line without an operation is a get
+std::vector<Request> RequestProcessor::loadRequestsFromTracesFile(const std::string &file_path)
 {
-    std::vector<std::pair<int, int>> requests;
+    std::vector<Request> requests;
 
     int fd = open(file_path.c_str(), O_RDONLY);
     if (fd == -1)
@@ -143,7 +145,11 @@ std::vector<std::pair<int, int>> RequestProcessor::loadRequestsFromTracesFile(co
         if (line_start == end_ptr)
             continue;
 
-        requests[index++] = {static_cast<int>(key), 0};
+        while (*end_ptr == ' ' || *end_ptr == ',' || *end_ptr == '\t')
+            end_ptr++;
+        bool is_write = std::strncmp(end_ptr, "set", 3) == 0;
+
+        requests[index++] = {static_cast<int>(key), 0, is_write};
 
         // **Update progress bar**
         if (ptr - data >= next_progress)
@@ -191,12 +197,12 @@ void RequestProcessor::processAllFilesParallel(ReplicaManager &manager)
             // Launch a new thread for each valid file
             threads.emplace_back([&, file_path]()
                                  {
-                std::vector<std::pair<int, int>> requests = loadRequestsFromFile(file_path);
+                std::vector<Request> requests = loadRequestsFromFile(file_path);
                 
-                for (const auto &[key, replica] : requests)
+                for (const auto &[key, replica, is_write] : requests)
                 {
 
-                    manager.handleRequest(key, replica);
+                    manager.handleRequest(key, replica, is_write);
                     completed_requests++;
                 }
                 
@@ -230,17 +236,17 @@ void RequestProcessor::processFirstFile(ReplicaManager &manager)
                 continue;
             }
 
-            std::vector<std::pair<int, int>> requests = loadRequestsFromTracesFile(file_path);
+            std::vector<Request> requests = loadRequestsFromTracesFile(file_path);
             std::thread progress_thread(displayProgressBar, requests.size());
 
-            for (const auto &[key, replica] : requests)
+            for (const auto &[key, replica, is_write] : requests)
             {
                 // if (total_requests % 1000000 == 0)
                 // {
                 //     std::cout << "keys: " << key << "\n";
                 // }
                 // total_requests++;
-                manager.handleRequest(key);
+                manager.handleRequest(key, -1, is_write);
                 completed_requests++;
             }
             progress_thread.join();

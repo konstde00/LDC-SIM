@@ -25,6 +25,16 @@ std::mutex key_to_id_mutex;
 
 std::atomic<size_t> processed_lines(0);
 std::atomic<size_t> total_lines(0);
+std::atomic<size_t> write_requests(0);
+
+// With --with-writes, operations that write the object are kept and emitted as "<id> set" in seq.txt
+bool keep_writes = false;
+
+bool is_write(const std::string &operation)
+{
+    return operation == "set" || operation == "add" || operation == "replace" || operation == "cas" ||
+           operation == "append" || operation == "prepend" || operation == "incr" || operation == "decr";
+}
 
 // **Accurate progress bar**
 void print_progress()
@@ -40,7 +50,7 @@ void print_progress()
 }
 
 // **Process a chunk of the file in parallel using TBB**
-void process_chunk(const char *data, size_t start, size_t end, std::vector<std::string> &output_lines)
+void process_chunk(const char *data, size_t start, size_t end, std::vector<std::pair<std::string, bool>> &output_lines)
 {
     std::string line, col1, key, col3, col4, col5, operation, col7;
 
@@ -65,7 +75,13 @@ void process_chunk(const char *data, size_t start, size_t end, std::vector<std::
             if (operation == "get")
             {
                 freq_map[key]++;
-                output_lines.push_back(key);
+                output_lines.emplace_back(key, false);
+            }
+            else if (keep_writes && is_write(operation))
+            {
+                freq_map[key]++;
+                output_lines.emplace_back(key, true);
+                write_requests++;
             }
         }
         processed_lines++;
@@ -73,7 +89,7 @@ void process_chunk(const char *data, size_t start, size_t end, std::vector<std::
 }
 
 // **Process file in manageable chunks**
-void process_file_chunk(int fd, off_t chunk_start, off_t chunk_size, std::vector<std::vector<std::string>> &thread_outputs)
+void process_file_chunk(int fd, off_t chunk_start, off_t chunk_size, std::vector<std::vector<std::pair<std::string, bool>>> &thread_outputs)
 {
     char *data = static_cast<char *>(mmap(nullptr, chunk_size, PROT_READ, MAP_PRIVATE, fd, chunk_start));
     if (data == MAP_FAILED)
@@ -98,9 +114,10 @@ void process_file_chunk(int fd, off_t chunk_start, off_t chunk_size, std::vector
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
+    keep_writes = argc == 4 && std::string(argv[3]) == "--with-writes";
+    if (argc != 3 && !keep_writes)
     {
-        std::cerr << "Usage: " << argv[0] << " <large_file_path> <output_folder>\n";
+        std::cerr << "Usage: " << argv[0] << " <large_file_path> <output_folder> [--with-writes]\n";
         return 1;
     }
 
@@ -137,7 +154,7 @@ int main(int argc, char *argv[])
 
     processed_lines = 0;
 
-    std::vector<std::vector<std::string>> thread_outputs(NUM_THREADS);
+    std::vector<std::vector<std::pair<std::string, bool>>> thread_outputs(NUM_THREADS);
     std::thread progress_thread(print_progress);
 
     for (off_t chunk_start = 0; chunk_start < file_size; chunk_start += CHUNK_SIZE)
@@ -186,16 +203,18 @@ int main(int argc, char *argv[])
     sorted_freq.clear();
 
     stats_out << "Trace Statistics:\n";
-    stats_out << "  - Total 'get' requests: " << total_requests << "\n";
+    stats_out << "  - Total 'get' requests: " << total_requests - write_requests << "\n";
+    if (keep_writes)
+        stats_out << "  - Total 'set' requests: " << write_requests << "\n";
     stats_out << "  - Unique keys: " << unique_keys << "\n";
     stats_out << "  - Most frequent key count: " << max_freq << "\n";
     stats_out << "  - Least frequent key count: " << min_freq << "\n";
 
     for (const auto &lines : thread_outputs)
     {
-        for (const auto &key : lines)
+        for (const auto &[key, is_set] : lines)
         {
-            output_seq << key_to_id[key] << "\n";
+            output_seq << key_to_id[key] << (is_set ? " set" : "") << "\n";
         }
     }
 

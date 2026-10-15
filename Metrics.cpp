@@ -5,10 +5,11 @@
 
 Metrics::Metrics(const std::vector<std::set<int>> &key_sets, float cache_pct, int num_keys_seen,
                  float overall_miss_ratio, float remote_miss_ratio, float local_miss_ratio,
-                 const std::vector<float> &replica_miss_ratios, int total_keys_admitted, float avg_latency)
+                 const std::vector<float> &replica_miss_ratios, int total_keys_admitted, float avg_latency,
+                 uint64_t total_writes)
     : overall_miss_ratio(overall_miss_ratio), remote_miss_ratio(remote_miss_ratio),
       local_dup_miss_ratio(local_miss_ratio), replica_miss_ratios(replica_miss_ratios),
-      total_keys_admitted(total_keys_admitted), avg_latency(avg_latency)
+      total_keys_admitted(total_keys_admitted), total_writes(total_writes), avg_latency(avg_latency)
 {
 
     int nsets = key_sets.size();
@@ -76,5 +77,9 @@ void Metrics::writeToFile(const std::string &filename) const
     }
     file << "\n";
     file << "Total Keys Admitted: " << total_keys_admitted << "\n";
+    if (total_writes > 0)
+    {
+        file << "Total Writes: " << total_writes << "\n";
+    }
     file.close();
 }

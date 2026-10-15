@@ -93,6 +93,11 @@ The simulator **only** runs with JSON configuration files. You must configure `c
 - `cache_type`: Must be either "LRU" or "S3FIFO"
 - `total_dataset_size`: Should match your actual dataset size
 
+**Optional (writes):**
+- `process_writes` (default `false`): apply trace lines of the form `<key> set` as writes. A write is applied at every replica; OrigCache caches the object at every replica, Ldc updates it in place where it is already cached and otherwise puts it in a tiny per-replica queue. Average latency stays the average over reads. With `false`, every line is treated as a get, as before.
+- `tiny_queue_fraction` (default `0.0001`): size of Ldc's tiny write queue as a fraction of the cache. `0` makes Ldc write through the main cache (LDC-notq).
+- Traces with writes come from `traces/twitter_sim_code/code/parallel_file_processing.cpp <trace> <output_folder> --with-writes`.
+
 ### Step 4: Run the Simulation
 
 ```bash
