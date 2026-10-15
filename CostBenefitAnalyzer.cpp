@@ -70,7 +70,7 @@ uint64_t CostBenefitAnalyzer::get_sum_freq_till_index(uint64_t start, uint64_t e
     }
 
     uint64_t start_value = start ? c_sum[start - 1].second : 0;
-    uint64_t end_value = c_sum[end - 1].second;
+    uint64_t end_value = end ? c_sum[end - 1].second : 0;
     if (end_value == start_value)
         return 1;
     return end_value - start_value;

@@ -6,7 +6,7 @@ ReplicaManager::ReplicaManager(ConfigManager &config)
     : replica_misses(config.num_replicas, 0), remote_fetches(config.num_replicas, 0), cache_contents(config.num_replicas),
       rdma_enabled(config.rdma_enabled), enable_cba(config.enable_cba), stop_cba_thread(false), update_interval(config.update_interval),
       dataset_size(config.total_dataset_size), latency_local(config.latency_local), latency_rdma(config.latency_rdma), latency_disk(config.latency_disk),
-      enable_de_duplication(enable_de_duplication), is_access_rate_fixed(config.is_access_rate_fixed)
+      enable_de_duplication(config.enable_de_duplication), is_access_rate_fixed(config.is_access_rate_fixed)
 {
     workload_folder = config.workload_folder;
     cache_type = config.cache_type;
